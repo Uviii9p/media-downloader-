@@ -37,6 +37,7 @@ async def analyze_url(request: AnalysisRequest):
 @router.get("/stream")
 async def stream_media(
     url: str = Query(...),
+    filename: Optional[str] = Query(None),
     range: Optional[str] = Header(None)
 ):
-    return await stream_proxy.proxy_stream(url, range)
+    return await stream_proxy.proxy_stream(url, range, filename)

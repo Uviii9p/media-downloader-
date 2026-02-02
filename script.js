@@ -146,12 +146,12 @@ function displayResults(data) {
 
 function openPreview(format_id, isImage = false) {
     if (!currentAnalysisData) return;
-    
+
     // Find the format object
     const format = currentAnalysisData.formats.find(f => f.format_id === format_id) || currentAnalysisData.formats[0];
     const encodedUrl = encodeURIComponent(format.url);
     const streamUrl = `${API_BASE}/stream?url=${encodedUrl}`;
-    
+
     let content = '';
 
     if (currentAnalysisData.id === 'base64-img') {
@@ -186,11 +186,17 @@ function downloadVideo(formatId) {
     if (!currentAnalysisData) return;
     const format = currentAnalysisData.formats.find(f => f.format_id === formatId) || currentAnalysisData.formats[0];
     const encodedUrl = encodeURIComponent(format.url);
-    const downloadUrl = `${API_BASE}/stream?url=${encodedUrl}`;
-    
+    const filename = `MediaFlow_${currentAnalysisData.id}.mp4`;
+    const downloadUrl = `${API_BASE}/stream?url=${encodedUrl}&filename=${filename}`;
+
+    // Use window.location for downloading to respect Content-Disposition
+    // But to avoid navigating away if it fails, we use a hidden iframe or new tab usually.
+    // However, simplest here is keeping the anchor click or just opening it.
+    // If the backend sets Content-Disposition: attachment, simply navigating to it works best.
+
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.download = `MediaFlow_${currentAnalysisData.id}.mp4`;
+    a.download = filename; // This is a hint, but the header is the authority
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
