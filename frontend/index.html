@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaFlow | Next-Gen Media Engine</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body class="dark-mode">
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <header class="glass-header">
+        <div class="logo">
+            <i class="fas fa-wave-square"></i>
+            <span>MediaFlow</span>
+        </div>
+        <nav>
+            <a href="index.html" class="active">Home</a>
+            <a href="#" id="history-btn">History</a>
+            <a href="javascript:location.reload()">Refresh</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <section class="hero-section">
+            <h1 class="gradient-text">Process Media at <span class="accent-text"></span>Light Speed</span></h1>
+            <p class="subtitle">Extract, stream, and download content from any platform instantly.</p>
+            <div class="creator-badge">
+                <i class="fas fa-code"></i>
+                <span>Created by Sujal Rathod</span>
+            </div>
+
+            <div class="input-wrapper glass-card">
+                <input type="text" id="media-url" placeholder="Paste your link here (YouTube, Instagram, TikTok...)"
+                    autocomplete="off">
+                <button id="analyze-btn">
+                    <span>Analyze</span>
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        </section>
+
+        <section id="skeleton-section" class="results-container hidden">
+            <div class="skeleton-card glass-card">
+                <div class="timer-wrapper">
+                    <span id="analysis-timer" class="timer-text">Analyzing media... Please wait</span>
+                </div>
+                <div class="skeleton-thumb"></div>
+                <div class="skeleton-info">
+                    <div class="skeleton-line title"></div>
+                    <div class="skeleton-line subtitle"></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="results-section" class="results-container hidden"></section>
+    </main>
+
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closePreview()"><i class="fas fa-times"></i></span>
+            <div id="player-container"></div>
+        </div>
+    </div>
+
+    <!-- History Sidebar -->
+    <div id="history-sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h3>Download History</h3>
+            <span class="close-sidebar">&times;</span>
+        </div>
+        <div id="history-list" class="sidebar-content">
+            <!-- History items will be injected here -->
+        </div>
+        <div class="sidebar-footer">
+            <button id="clear-history" class="action-btn">Clear History</button>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+    <script src="script.js"></script>
+</body>
+
+</html>

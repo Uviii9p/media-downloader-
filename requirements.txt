@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+yt-dlp
+httpx
+pydantic
+pydantic-settings
+python-multipart
+aiofiles
+shortuuid
+python-dotenv
+
