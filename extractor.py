@@ -41,7 +41,25 @@ class MediaExtractor:
         clean_url = self._clean_url(url)
         print(f"[*] Analyzing: {clean_url}")
         
-        # Sequential Strategy for Vercel (Avoids spawning too many threads/processes)
+        # Domain Helper
+        is_youtube = 'youtube.com' in clean_url or 'youtu.be' in clean_url
+        
+        # Strategy 1: YouTube Specific (Force YDL)
+        if is_youtube:
+            try:
+                res = await self._strategy_ydl_direct(clean_url)
+                if res: return res
+            except Exception: pass
+            
+            # Fallback for cookies if needed (though usually not for public vids)
+            try:
+                res = await self._strategy_ydl_cookies(clean_url)
+                if res: return res
+            except Exception: pass
+            
+            return None # Don't try rapid scrape on YouTube, it gives bad results
+
+        # Strategy 2: Generic Sequential (Rapid -> Direct -> YDL)
         
         # 1. Rapid Scrape (Fastest, low overhead)
         try:
