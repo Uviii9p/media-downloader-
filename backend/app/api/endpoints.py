@@ -15,9 +15,14 @@ url_cache = {}
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_url(request: AnalysisRequest):
+    print(f"\n{'='*60}")
+    print(f"[ANALYZE] Received URL: {request.url}")
+    print(f"{'='*60}\n")
+    
     # Cache hit
     cached_id = url_cache.get(request.url)
     if cached_id and cached_id in metadata_store:
+        print(f"[CACHE HIT] Returning cached result for: {request.url}")
         return AnalysisResponse(success=True, data=metadata_store[cached_id])
 
     job_id = str(uuid.uuid4())
@@ -27,17 +32,24 @@ async def analyze_url(request: AnalysisRequest):
     try:
         metadata = await task
         if metadata:
+            print(f"[SUCCESS] Analysis completed for: {request.url}")
+            print(f"[SUCCESS] Title: {metadata.title}")
+            print(f"[SUCCESS] Platform: {metadata.platform}")
+            print(f"[SUCCESS] Formats: {len(metadata.formats)}")
             metadata_store[metadata.id] = metadata
             url_cache[request.url] = metadata.id
             return AnalysisResponse(success=True, data=metadata)
         
         # If metadata is None, it means all strategies failed
+        print(f"[FAILED] All extraction strategies failed for: {request.url}")
         return AnalysisResponse(
             success=False, 
             error="Analysis failed. The link might be private, restricted, or unsupported. Try a different link."
         )
     except Exception as e:
-        print(f"[!] Endpoint Error: {str(e)}")
+        print(f"[!] Endpoint Exception for {request.url}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return AnalysisResponse(success=False, error=f"Analysis error: {str(e)}")
 
 @router.get("/stream")
