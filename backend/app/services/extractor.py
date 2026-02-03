@@ -97,13 +97,15 @@ class MediaExtractor:
             except Exception as e:
                 print(f"[-] YDL-Direct failed: {e}")
             
-            return None
+            # If YouTube YDL fails (common on Vercel), fall through to Strategy 2 (Parallel)
+            print("[*] YouTube YDL failed or blocked, trying Parallel Fallbacks...")
 
-        # Strategy 2: Triple-Node Parallel Strategy for non-YouTube
+        # Strategy 2: Parallel Strategy
         strategies = [
             self._strategy_direct_file(clean_url),
             self._strategy_rapid_scrape(clean_url),
             self._strategy_ydl_direct(clean_url),
+            self._strategy_fallback_node(clean_url) # NEW: Public Node Fallback
         ]
         tasks = [asyncio.create_task(s) for s in strategies]
         
@@ -177,6 +179,39 @@ class MediaExtractor:
                         )
         except Exception:
             pass
+        return None
+
+    async def _strategy_fallback_node(self, url: str) -> Optional[MediaMetadata]:
+        """Uses a public media resolution node as a last resort."""
+        try:
+            # This is a public node known to work for many sites
+            api_url = f"https://api.cobalt.tools/api/json"
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Referer": "https://cobalt.tools/"
+            }
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(api_url, json={"url": url}, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    media_url = data.get('url') or data.get('stream')
+                    if media_url:
+                        return MediaMetadata(
+                            id=str(int(time.time())),
+                            title="Media Content (Resolved via Fallback)",
+                            platform="FallbackAPI",
+                            thumbnail=data.get('thumbnail'),
+                            formats=[MediaFormat(
+                                format_id="fallback",
+                                extension="mp4",
+                                resolution="HD",
+                                url=media_url
+                            )],
+                            original_url=url
+                        )
+        except Exception as e:
+            print(f"[-] Fallback Node failed: {e}")
         return None
 
     async def _strategy_ydl_direct(self, url: str) -> Optional[MediaMetadata]:
