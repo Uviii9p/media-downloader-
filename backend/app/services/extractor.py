@@ -36,15 +36,30 @@ class MediaExtractor:
                 if resp.status_code == 200:
                     text = resp.text
                     
-                    # 1. Look for YouTube Video ID
-                    yt_match = re.search(r'https?://(?:www\.)?(?:youtube\.com|youtu\.be)/(?:watch\?v=|embed/|v/|shorts/)([\w-]{11})', text)
-                    if yt_match:
-                        return f"https://www.youtube.com/watch?v={yt_match.group(1)}"
+                    # 1. Look for common video patterns in raw text
+                    patterns = [
+                        r'https?://(?:www\.)?youtube\.com/watch\?v=([\w-]{11})',
+                        r'https?://youtu\.be/([\w-]{11})',
+                        r'https?://(?:www\.)?instagram\.com/(?:p|reel)/([\w-]{11})',
+                        r'(https?://[^"\'<>]+\.mp4)'
+                    ]
                     
-                    # 2. Look for direct video links (mp4)
-                    mp4_match = re.search(r'(https?://[^"\'<>]+\.mp4)', text)
-                    if mp4_match:
-                        return mp4_match.group(1)
+                    for p in patterns:
+                        match = re.search(p, text)
+                        if match:
+                            # If it's a capture group, return that, otherwise return the full match
+                            final_link = match.group(0) if p.startswith('(') else match.group(0)
+                            print(f"[+] Found resolved link in Google: {final_link}")
+                            return final_link
+                    
+                    # 2. Look for Google Video Search results encoded in URLs
+                    gv_match = re.search(r'/url\?q=(https?://[^&]+)', text)
+                    if gv_match:
+                        from urllib.parse import unquote
+                        link = unquote(gv_match.group(1))
+                        if 'youtube.com' in link or 'instagram.com' in link or link.endswith('.mp4'):
+                            print(f"[+] Found resolved link in Google URL: {link}")
+                            return link
         except Exception as e:
             print(f"Error resolving Google Search: {e}")
         return None
@@ -74,18 +89,13 @@ class MediaExtractor:
         
         # Strategy 1: YouTube Specific (Force YDL)
         if is_youtube:
+            # Try Direct YDL
             try:
+                print("[*] Trying Strategy: YDL-Direct")
                 res = await self._strategy_ydl_direct(clean_url)
                 if res: return res
-            except Exception: pass
-            
-            # Fallback for cookies if needed
-            try:
-                print("[*] Trying Strategy: YDL-Cookies")
-                res = await self._strategy_ydl_cookies(clean_url)
-                if res: return res
-            except Exception as e: 
-                print(f"[-] YDL-Cookies failed: {e}")
+            except Exception as e:
+                print(f"[-] YDL-Direct failed: {e}")
             
             return None
 
@@ -174,26 +184,19 @@ class MediaExtractor:
             'quiet': True, 'no_warnings': True, 'skip_download': True,
             'check_formats': False, 'user_agent': self.ua, 'socket_timeout': 10,
             'nocheckcertificate': True, 'no_color': True,
-            'geo_bypass': True, 'extract_flat': 'in_playlist'
+            'geo_bypass': True, 'extract_flat': 'in_playlist',
+            'referer': 'https://www.google.com/'
         }
         return await self._run_ydl(url, opts, "Direct")
 
-    async def _strategy_ydl_cookies(self, url: str) -> Optional[MediaMetadata]:
-        for browser in ['chrome', 'edge', 'firefox']:
-            opts = {
-                'quiet': True, 'skip_download': True, 'cookiesfrombrowser': (browser,), 'socket_timeout': 10
-            }
-            res = await self._run_ydl(url, opts, f"Cookies-{browser}")
-            if res: return res
-        return None
 
     async def _run_ydl(self, url: str, opts: dict, name: str) -> Optional[MediaMetadata]:
         loop = asyncio.get_event_loop()
         try:
             info = await loop.run_in_executor(None, self._extract_sync, url, opts)
             if info: return self._parse_info(info, url)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[!] YDL {name} Error: {str(e)}")
         return None
 
     def _extract_sync(self, url: str, opts: dict):
@@ -203,6 +206,7 @@ class MediaExtractor:
     def _parse_info(self, info: Dict[str, Any], original_url: str) -> MediaMetadata:
         if 'entries' in info and info['entries']: info = info['entries'][0]
         
+        is_youtube = 'youtube.com' in original_url or 'youtu.be' in original_url
         formats = []
         raw_formats = info.get('formats', []) or ([info] if info.get('url') else [])
         
@@ -215,10 +219,20 @@ class MediaExtractor:
             acodec = f.get('acodec', 'none')
             ext = f.get('ext', '')
             
-            # We want BOTH video and audio in one file for the best streaming experience
+            # YouTube often has separate video/audio. We prefer combined but will take what we can.
             is_combined = vcodec != 'none' and acodec != 'none'
             
-            if is_combined or ext == 'mp4' or 'instagram.com' in original_url:
+            # For YouTube, if we can't find combined, we might need to show something.
+            # But for simplicity, we focus on what can be streamed directly in browser.
+            if is_combined or ext in ['mp4', 'm4a', 'mp3'] or 'instagram.com' in original_url:
+                formats.append(MediaFormat(
+                    format_id=str(f.get('format_id')), 
+                    extension=ext or 'mp4',
+                    resolution=f.get('resolution') or (f"{f.get('height')}p" if f.get('height') else "HD"),
+                    filesize=f.get('filesize') or f.get('filesize_approx'),
+                    url=url
+                ))
+            elif not is_youtube: # For other sites, be more liberal
                 formats.append(MediaFormat(
                     format_id=str(f.get('format_id')), 
                     extension=ext or 'mp4',
