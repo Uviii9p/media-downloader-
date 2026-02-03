@@ -81,9 +81,11 @@ class MediaExtractor:
             
             # Fallback for cookies if needed
             try:
+                print("[*] Trying Strategy: YDL-Cookies")
                 res = await self._strategy_ydl_cookies(clean_url)
                 if res: return res
-            except Exception: pass
+            except Exception as e: 
+                print(f"[-] YDL-Cookies failed: {e}")
             
             return None
 
@@ -100,17 +102,22 @@ class MediaExtractor:
                 try:
                     result = await completed
                     if result and result.formats:
+                        print(f"[+] Strategy Success: {result.platform}")
                         for t in tasks: 
                             if not t.done(): t.cancel()
                         return result
-                except Exception:
+                    else:
+                        print(f"[-] A strategy returned no result or formats.")
+                except Exception as e:
+                    print(f"[-] Strategy failed with error: {str(e)}")
                     continue
         except Exception as e:
-            print(f"[!] Extraction Timeout or Error: {e}")
+            print(f"[!] Extraction Timeout or Global Error: {e}")
         finally:
             for t in tasks:
                 if not t.done(): t.cancel()
 
+        print(f"[!] All extraction strategies failed for: {clean_url}")
         return None
 
     async def _strategy_direct_file(self, url: str) -> Optional[MediaMetadata]:
@@ -165,7 +172,9 @@ class MediaExtractor:
     async def _strategy_ydl_direct(self, url: str) -> Optional[MediaMetadata]:
         opts = {
             'quiet': True, 'no_warnings': True, 'skip_download': True,
-            'check_formats': False, 'user_agent': self.ua, 'socket_timeout': 10
+            'check_formats': False, 'user_agent': self.ua, 'socket_timeout': 10,
+            'nocheckcertificate': True, 'no_color': True,
+            'geo_bypass': True, 'extract_flat': 'in_playlist'
         }
         return await self._run_ydl(url, opts, "Direct")
 

@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 yt-dlp
-httpx
+httpx[http2]
 pydantic
 pydantic-settings
 python-multipart
