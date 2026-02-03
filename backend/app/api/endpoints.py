@@ -30,20 +30,23 @@ async def analyze_url(request: AnalysisRequest):
             metadata_store[metadata.id] = metadata
             url_cache[request.url] = metadata.id
             return AnalysisResponse(success=True, data=metadata)
-        return AnalysisResponse(success=False, error="Analysis failed or timed out.")
+        
+        # If metadata is None, it means all strategies failed
+        return AnalysisResponse(
+            success=False, 
+            error="Analysis failed. The link might be private, restricted, or unsupported. Try a different link."
+        )
     except Exception as e:
-        return AnalysisResponse(success=False, error=str(e))
+        print(f"[!] Endpoint Error: {str(e)}")
+        return AnalysisResponse(success=False, error=f"Analysis error: {str(e)}")
 
-@router.get("/stream/{media_id}")
+@router.get("/stream")
 async def stream_media(
-    media_id: str, 
-    format_id: str = Query(...),
+    url: str = Query(...), 
+    filename: Optional[str] = Query(None),
     range: Optional[str] = Header(None)
 ):
-    metadata = metadata_store.get(media_id)
-    if not metadata: raise HTTPException(status_code=404, detail="Media not found.")
-    
-    target = next((f for f in metadata.formats if f.format_id == format_id), None)
-    if not target or not target.url: raise HTTPException(status_code=404, detail="Format not available.")
-    
-    return await stream_proxy.proxy_stream(target.url, range)
+    try:
+        return await stream_proxy.proxy_stream(url, range, filename)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
