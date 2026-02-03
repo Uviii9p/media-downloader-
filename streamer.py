@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from typing import AsyncGenerator
 
 class StreamProxy:
-    async def proxy_stream(self, url: str, range_header: str = None, filename: str = None) -> StreamingResponse:
+    async def proxy_stream(self, url: str, range_header: str = None) -> StreamingResponse:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
@@ -29,10 +29,6 @@ class StreamProxy:
                 "Content-Range": initial_res.headers.get("Content-Range", ""),
                 "Access-Control-Allow-Origin": "*",
             }
-            
-            if filename:
-                res_headers["Content-Disposition"] = f'attachment; filename="{filename}"'
-
             # Remove empty values
             res_headers = {k: v for k, v in res_headers.items() if v}
 

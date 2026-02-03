@@ -1,11 +1,4 @@
-// Determine API Base URL dynamically
-const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
-const isFile = window.location.protocol === 'file:';
-// Always point to backend port 8000 for local development (covers Live Server @ 5500, File, etc.)
-const API_BASE = (isLocal || isFile) ? 'http://127.0.0.1:8000/api/v1' : '/api/v1';
-
-console.log(`Using API Base: ${API_BASE}`);
-
+const API_BASE = '/api/v1';
 
 const urlInput = document.getElementById('media-url');
 const analyzeBtn = document.getElementById('analyze-btn');
@@ -54,8 +47,6 @@ document.addEventListener('click', (e) => {
     }
 });
 
-let currentAnalysisData = null;
-
 async function startAnalysis(url) {
     // Show loading state
     resultsSection.classList.add('hidden');
@@ -76,7 +67,6 @@ async function startAnalysis(url) {
         stopTimer();
 
         if (result.success) {
-            currentAnalysisData = result.data; // Store globally
             addToHistory(result.data);
             displayResults(result.data);
         } else {
@@ -85,8 +75,7 @@ async function startAnalysis(url) {
         }
     } catch (err) {
         stopTimer();
-        console.error('Analysis Error:', err);
-        showToast(`Server unavailable: ${err.message}. Ensure backend is running.`, 'error');
+        showToast('Server unavailable. Ensure backend is running.', 'error');
         skeletonSection.classList.add('hidden');
     }
 }
@@ -122,11 +111,11 @@ function displayResults(data) {
                 <span class="platform-tag">${data.platform.toUpperCase()}</span>
                 <h2>${data.title}</h2>
                 <div class="action-buttons">
-                    <button class="action-btn preview-btn" onclick="openPreview('${bestFormat.format_id}', ${isImage})">
+                    <button class="action-btn preview-btn" onclick="openPreview('${data.id}', '${bestFormat.format_id}', ${isImage})">
                         <i class="fas fa-${isImage ? 'eye' : 'play'}"></i>
                         <span>${isImage ? 'View Image' : 'Preview Video'}</span>
                     </button>
-                    <button class="action-btn download-btn" onclick="downloadVideo('${bestFormat.format_id}')">
+                    <button class="action-btn download-btn" onclick="downloadVideo('${data.id}', '${bestFormat.format_id}')">
                         <i class="fas fa-download"></i>
                         <span>${isImage ? 'Download' : 'Download Best'}</span>
                     </button>
@@ -137,7 +126,7 @@ function displayResults(data) {
                     <h3>Available Qualities</h3>
                     <div class="formats-grid">
                         ${displayFormats.map(f => `
-                            <div class="format-btn" onclick="downloadVideo('${f.format_id}')" title="Download in ${f.resolution || f.quality_label}">
+                            <div class="format-btn" onclick="downloadVideo('${data.id}', '${f.format_id}')" title="Download in ${f.resolution || f.quality_label}">
                                 <span>${f.resolution || f.quality_label || 'Audio Only'}</span>
                                 <small>${f.extension.toUpperCase()} • ${formatBytes(f.filesize)}</small>
                             </div>
@@ -150,92 +139,67 @@ function displayResults(data) {
     `;
 }
 
-// History Functions
 function addToHistory(data) {
-    if (!data || !data.title) return;
-
     let history = JSON.parse(localStorage.getItem('mediaHistory') || '[]');
-
-    // Remove duplicate by URL or ID to avoid clutter
-    history = history.filter(item => item.url !== data.original_url);
-
-    // Add new item
+    // Avoid duplicates
+    history = history.filter(item => item.id !== data.id);
+    // Add to start
     history.unshift({
         id: data.id,
         title: data.title,
         thumbnail: data.thumbnail,
+        original_url: data.original_url,
         platform: data.platform,
-        url: data.original_url, // Critical: Store URL for re-analysis
-        timestamp: Date.now()
+        timestamp: new Date().getTime()
     });
+    // Keep last 50
+    localStorage.setItem('mediaHistory', JSON.stringify(history.slice(0, 50)));
+}
 
-    // Keep max 20 items
-    if (history.length > 20) history.pop();
-
-    localStorage.setItem('mediaHistory', JSON.stringify(history));
+function toggleHistory() {
     renderHistory();
+    historySidebar.classList.add('active');
 }
 
 function renderHistory() {
     const history = JSON.parse(localStorage.getItem('mediaHistory') || '[]');
-
     if (history.length === 0) {
-        historyList.innerHTML = '<div class="empty-history">No history yet</div>';
+        historyList.innerHTML = '<div style="text-align:center;color:var(--text-dim);margin-top:2rem;">No history yet</div>';
         return;
     }
 
     historyList.innerHTML = history.map(item => `
-        <div class="history-item glass-card" onclick="startAnalysisFromHistory('${item.url}')">
-            <img src="${item.thumbnail || 'https://via.placeholder.com/60'}" class="history-thumb">
+        <div class="history-item" onclick="loadFromHistory('${item.original_url}')">
+            <img src="${item.thumbnail || 'https://via.placeholder.com/80x60'}" class="history-thumb">
             <div class="history-info">
                 <h4>${item.title}</h4>
-                <span class="history-platform">${item.platform}</span>
+                <p>${item.platform} • ${new Date(item.timestamp).toLocaleDateString()}</p>
             </div>
         </div>
     `).join('');
 }
 
-function toggleHistory() {
-    historySidebar.classList.toggle('active');
-}
-
-function startAnalysisFromHistory(url) {
-    if (!url) return;
+function loadFromHistory(url) {
     urlInput.value = url;
     historySidebar.classList.remove('active');
     startAnalysis(url);
 }
 
-function toggleFullscreen() {
-    const video = document.getElementById('preview-video');
-    if (!video) return;
-
-    if (!document.fullscreenElement) {
-        video.requestFullscreen().catch(err => {
-            console.warn(`Error attempting to enable fullscreen: ${err.message}`);
-        });
-    } else {
-        document.exitFullscreen();
-    }
-}
-
-
-function openPreview(format_id, isImage = false) {
-    if (!currentAnalysisData) return;
-
-    // Find the format object
-    const format = currentAnalysisData.formats.find(f => f.format_id === format_id) || currentAnalysisData.formats[0];
-    const encodedUrl = encodeURIComponent(format.url);
-    const streamUrl = `${API_BASE}/stream?url=${encodedUrl}`;
-
+function openPreview(media_id, format_id, isImage = false) {
     let content = '';
 
-    if (currentAnalysisData.id === 'base64-img') {
+    if (media_id === 'base64-img') {
+        const urlInput = document.getElementById('media-url'); // Fallback to get raw data if needed, but bestFormat has it
+        // Note: In my displayResults, data.formats[0].url has the base64
+        // For simplicity, we can fetch it again or store it globally. 
+        // But the displayed thumbnail is already the base64.
         const thumb = document.querySelector('.media-thumb').src;
         content = `<img src="${thumb}" style="width: 100%; border-radius: 18px; box-shadow: 0 40px 100px rgba(0,0,0,0.9);">`;
     } else if (isImage) {
+        const streamUrl = `${API_BASE}/stream/${media_id}?format_id=${format_id}`;
         content = `<img src="${streamUrl}" style="width: 100%; border-radius: 18px; box-shadow: 0 40px 100px rgba(0,0,0,0.9);">`;
     } else {
+        const streamUrl = `${API_BASE}/stream/${media_id}?format_id=${format_id}`;
         content = `
             <div class="video-wrapper">
                 <video id="preview-video" controls autoplay playsinline preload="metadata">
@@ -256,30 +220,53 @@ function openPreview(format_id, isImage = false) {
     if (video) video.load();
 }
 
+function toggleFullscreen() {
+    const video = document.getElementById('preview-video');
 
-
-
-function closePreview() {
-    previewModal.classList.add('hidden');
-    playerContainer.innerHTML = ''; // Stop video playback
+    if (!document.fullscreenElement) {
+        if (video.requestFullscreen) {
+            video.requestFullscreen();
+        } else if (video.webkitRequestFullscreen) {
+            video.webkitRequestFullscreen();
+        } else if (video.msRequestFullscreen) {
+            video.msRequestFullscreen();
+        }
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
 }
 
+// Global listener for escape or fullscreen change
+document.addEventListener('fullscreenchange', () => {
+    const video = document.getElementById('preview-video');
+    if (!document.fullscreenElement && video) {
+        // Optional: take any action when user exits fullscreen manually
+    }
+});
 
-function downloadVideo(formatId) {
-    if (!currentAnalysisData) return;
-    const format = currentAnalysisData.formats.find(f => f.format_id === formatId) || currentAnalysisData.formats[0];
-    const encodedUrl = encodeURIComponent(format.url);
-    const filename = `MediaFlow_${currentAnalysisData.id}.mp4`;
-    const downloadUrl = `${API_BASE}/stream?url=${encodedUrl}&filename=${filename}`;
+// Close modal on backdrop click
+previewModal.addEventListener('click', (e) => {
+    if (e.target === previewModal) {
+        closePreview();
+    }
+});
 
-    // Use window.location for downloading to respect Content-Disposition
-    // But to avoid navigating away if it fails, we use a hidden iframe or new tab usually.
-    // However, simplest here is keeping the anchor click or just opening it.
-    // If the backend sets Content-Disposition: attachment, simply navigating to it works best.
+function closePreview() {
+    // Also exit fullscreen if closing modal
+    if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => { });
+    }
+    previewModal.classList.add('hidden');
+    playerContainer.innerHTML = '';
+}
 
+function downloadVideo(mediaId, formatId) {
+    const downloadUrl = `${API_BASE}/stream/${mediaId}?format_id=${formatId}`;
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.download = filename; // This is a hint, but the header is the authority
+    a.download = `MediaFlow_${mediaId}.mp4`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
