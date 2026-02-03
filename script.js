@@ -1,4 +1,10 @@
-const API_BASE = '/api/v1';
+// Determine API Base URL dynamically
+const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
+const isFile = window.location.protocol === 'file:';
+// Always point to backend port 8000 for local development (covers Live Server @ 5500, File, etc.)
+const API_BASE = (isLocal || isFile) ? 'http://127.0.0.1:8000/api/v1' : '/api/v1';
+
+console.log(`Using API Base: ${API_BASE}`);
 
 const urlInput = document.getElementById('media-url');
 const analyzeBtn = document.getElementById('analyze-btn');
@@ -15,6 +21,7 @@ const closeSidebarBtn = document.querySelector('.close-sidebar');
 const clearHistoryBtn = document.getElementById('clear-history');
 
 let timerId = null;
+let currentAnalysisData = null;
 
 analyzeBtn.addEventListener('click', () => {
     const url = urlInput.value.trim();
@@ -67,6 +74,7 @@ async function startAnalysis(url) {
         stopTimer();
 
         if (result.success) {
+            currentAnalysisData = result.data;
             addToHistory(result.data);
             displayResults(result.data);
         } else {
@@ -75,6 +83,7 @@ async function startAnalysis(url) {
         }
     } catch (err) {
         stopTimer();
+        console.error('Analysis Error:', err);
         showToast('Server unavailable. Ensure backend is running.', 'error');
         skeletonSection.classList.add('hidden');
     }
@@ -111,11 +120,11 @@ function displayResults(data) {
                 <span class="platform-tag">${data.platform.toUpperCase()}</span>
                 <h2>${data.title}</h2>
                 <div class="action-buttons">
-                    <button class="action-btn preview-btn" onclick="openPreview('${data.id}', '${bestFormat.format_id}', ${isImage})">
+                    <button class="action-btn preview-btn" onclick="openPreview('${bestFormat.format_id}', ${isImage})">
                         <i class="fas fa-${isImage ? 'eye' : 'play'}"></i>
                         <span>${isImage ? 'View Image' : 'Preview Video'}</span>
                     </button>
-                    <button class="action-btn download-btn" onclick="downloadVideo('${data.id}', '${bestFormat.format_id}')">
+                    <button class="action-btn download-btn" onclick="downloadVideo('${bestFormat.format_id}')">
                         <i class="fas fa-download"></i>
                         <span>${isImage ? 'Download' : 'Download Best'}</span>
                     </button>
@@ -126,7 +135,7 @@ function displayResults(data) {
                     <h3>Available Qualities</h3>
                     <div class="formats-grid">
                         ${displayFormats.map(f => `
-                            <div class="format-btn" onclick="downloadVideo('${data.id}', '${f.format_id}')" title="Download in ${f.resolution || f.quality_label}">
+                            <div class="format-btn" onclick="downloadVideo('${f.format_id}')" title="Download in ${f.resolution || f.quality_label}">
                                 <span>${f.resolution || f.quality_label || 'Audio Only'}</span>
                                 <small>${f.extension.toUpperCase()} • ${formatBytes(f.filesize)}</small>
                             </div>
@@ -140,25 +149,27 @@ function displayResults(data) {
 }
 
 function addToHistory(data) {
+    if (!data || !data.title) return;
     let history = JSON.parse(localStorage.getItem('mediaHistory') || '[]');
     // Avoid duplicates
-    history = history.filter(item => item.id !== data.id);
+    history = history.filter(item => item.url !== data.original_url);
     // Add to start
     history.unshift({
         id: data.id,
         title: data.title,
         thumbnail: data.thumbnail,
-        original_url: data.original_url,
+        url: data.original_url,
         platform: data.platform,
         timestamp: new Date().getTime()
     });
-    // Keep last 50
-    localStorage.setItem('mediaHistory', JSON.stringify(history.slice(0, 50)));
+    // Keep last 20
+    localStorage.setItem('mediaHistory', JSON.stringify(history.slice(0, 20)));
+    renderHistory();
 }
 
 function toggleHistory() {
     renderHistory();
-    historySidebar.classList.add('active');
+    historySidebar.classList.toggle('active');
 }
 
 function renderHistory() {
@@ -169,7 +180,7 @@ function renderHistory() {
     }
 
     historyList.innerHTML = history.map(item => `
-        <div class="history-item" onclick="loadFromHistory('${item.original_url}')">
+        <div class="history-item" onclick="loadFromHistory('${item.url}')">
             <img src="${item.thumbnail || 'https://via.placeholder.com/80x60'}" class="history-thumb">
             <div class="history-info">
                 <h4>${item.title}</h4>
@@ -180,26 +191,25 @@ function renderHistory() {
 }
 
 function loadFromHistory(url) {
+    if (!url) return;
     urlInput.value = url;
     historySidebar.classList.remove('active');
     startAnalysis(url);
 }
 
-function openPreview(media_id, format_id, isImage = false) {
+function openPreview(format_id, isImage = false) {
+    if (!currentAnalysisData) return;
+    const format = currentAnalysisData.formats.find(f => f.format_id === format_id) || currentAnalysisData.formats[0];
+    const streamUrl = `${API_BASE}/stream?url=${encodeURIComponent(format.url)}`;
+
     let content = '';
 
-    if (media_id === 'base64-img') {
-        const urlInput = document.getElementById('media-url'); // Fallback to get raw data if needed, but bestFormat has it
-        // Note: In my displayResults, data.formats[0].url has the base64
-        // For simplicity, we can fetch it again or store it globally. 
-        // But the displayed thumbnail is already the base64.
+    if (currentAnalysisData.id === 'base64-img') {
         const thumb = document.querySelector('.media-thumb').src;
         content = `<img src="${thumb}" style="width: 100%; border-radius: 18px; box-shadow: 0 40px 100px rgba(0,0,0,0.9);">`;
     } else if (isImage) {
-        const streamUrl = `${API_BASE}/stream/${media_id}?format_id=${format_id}`;
         content = `<img src="${streamUrl}" style="width: 100%; border-radius: 18px; box-shadow: 0 40px 100px rgba(0,0,0,0.9);">`;
     } else {
-        const streamUrl = `${API_BASE}/stream/${media_id}?format_id=${format_id}`;
         content = `
             <div class="video-wrapper">
                 <video id="preview-video" controls autoplay playsinline preload="metadata">
@@ -222,6 +232,7 @@ function openPreview(media_id, format_id, isImage = false) {
 
 function toggleFullscreen() {
     const video = document.getElementById('preview-video');
+    if (!video) return;
 
     if (!document.fullscreenElement) {
         if (video.requestFullscreen) {
@@ -262,11 +273,15 @@ function closePreview() {
     playerContainer.innerHTML = '';
 }
 
-function downloadVideo(mediaId, formatId) {
-    const downloadUrl = `${API_BASE}/stream/${mediaId}?format_id=${formatId}`;
+function downloadVideo(formatId) {
+    if (!currentAnalysisData) return;
+    const format = currentAnalysisData.formats.find(f => f.format_id === formatId) || currentAnalysisData.formats[0];
+    const filename = `MediaFlow_${currentAnalysisData.id}.${format.extension || 'mp4'}`;
+    const downloadUrl = `${API_BASE}/stream?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(filename)}`;
+
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.download = `MediaFlow_${mediaId}.mp4`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

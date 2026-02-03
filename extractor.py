@@ -26,6 +26,29 @@ class MediaExtractor:
                 
         return url
 
+    async def _resolve_google_search_content(self, url: str) -> Optional[str]:
+        """Extracts the actual media link from a Google Search result page."""
+        try:
+            # Use Mobile UA to get cleaner HTML
+            mobile_ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36"
+            async with httpx.AsyncClient(follow_redirects=True, verify=False) as client:
+                resp = await client.get(url, headers={'User-Agent': mobile_ua})
+                if resp.status_code == 200:
+                    text = resp.text
+                    
+                    # 1. Look for YouTube Video ID
+                    yt_match = re.search(r'https?://(?:www\.)?(?:youtube\.com|youtu\.be)/(?:watch\?v=|embed/|v/|shorts/)([\w-]{11})', text)
+                    if yt_match:
+                        return f"https://www.youtube.com/watch?v={yt_match.group(1)}"
+                    
+                    # 2. Look for direct video links (mp4)
+                    mp4_match = re.search(r'(https?://[^"\'<>]+\.mp4)', text)
+                    if mp4_match:
+                        return mp4_match.group(1)
+        except Exception as e:
+            print(f"Error resolving Google Search: {e}")
+        return None
+
     async def extract_info(self, url: str) -> Optional[MediaMetadata]:
         # Handle Data URIs (Base64 images)
         if url.startswith('data:image'):
@@ -38,10 +61,33 @@ class MediaExtractor:
                 original_url=url[:100] + "..."
             )
 
+        if 'google.com/search' in url:
+            resolved = await self._resolve_google_search_content(url)
+            if resolved:
+                url = resolved
+
         clean_url = self._clean_url(url)
         print(f"[*] Analyzing: {clean_url}")
         
-        # Triple-Node Parallel Strategy
+        # Domain Helper
+        is_youtube = 'youtube.com' in clean_url or 'youtu.be' in clean_url
+        
+        # Strategy 1: YouTube Specific (Force YDL)
+        if is_youtube:
+            try:
+                res = await self._strategy_ydl_direct(clean_url)
+                if res: return res
+            except Exception: pass
+            
+            # Fallback for cookies if needed
+            try:
+                res = await self._strategy_ydl_cookies(clean_url)
+                if res: return res
+            except Exception: pass
+            
+            return None
+
+        # Strategy 2: Triple-Node Parallel Strategy for non-YouTube
         strategies = [
             self._strategy_direct_file(clean_url),
             self._strategy_rapid_scrape(clean_url),
@@ -50,7 +96,6 @@ class MediaExtractor:
         tasks = [asyncio.create_task(s) for s in strategies]
         
         try:
-            # Removed the 15s timeout to allow full processing
             for completed in asyncio.as_completed(tasks):
                 try:
                     result = await completed
