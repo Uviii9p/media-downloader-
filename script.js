@@ -1,4 +1,11 @@
-const API_BASE = '/api/v1';
+// Determine API Base URL dynamically
+const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
+const isFile = window.location.protocol === 'file:';
+// Always point to backend port 8000 for local development (covers Live Server @ 5500, File, etc.)
+const API_BASE = (isLocal || isFile) ? 'http://127.0.0.1:8000/api/v1' : '/api/v1';
+
+console.log(`Using API Base: ${API_BASE}`);
+
 
 const urlInput = document.getElementById('media-url');
 const analyzeBtn = document.getElementById('analyze-btn');
@@ -78,7 +85,8 @@ async function startAnalysis(url) {
         }
     } catch (err) {
         stopTimer();
-        showToast('Server unavailable. Ensure backend is running.', 'error');
+        console.error('Analysis Error:', err);
+        showToast(`Server unavailable: ${err.message}. Ensure backend is running.`, 'error');
         skeletonSection.classList.add('hidden');
     }
 }
@@ -142,7 +150,75 @@ function displayResults(data) {
     `;
 }
 
-// History code remains the same... (lines 142-187 skipped in this replacement block as they are outside target)
+// History Functions
+function addToHistory(data) {
+    if (!data || !data.title) return;
+
+    let history = JSON.parse(localStorage.getItem('mediaHistory') || '[]');
+
+    // Remove duplicate by URL or ID to avoid clutter
+    history = history.filter(item => item.url !== data.original_url);
+
+    // Add new item
+    history.unshift({
+        id: data.id,
+        title: data.title,
+        thumbnail: data.thumbnail,
+        platform: data.platform,
+        url: data.original_url, // Critical: Store URL for re-analysis
+        timestamp: Date.now()
+    });
+
+    // Keep max 20 items
+    if (history.length > 20) history.pop();
+
+    localStorage.setItem('mediaHistory', JSON.stringify(history));
+    renderHistory();
+}
+
+function renderHistory() {
+    const history = JSON.parse(localStorage.getItem('mediaHistory') || '[]');
+
+    if (history.length === 0) {
+        historyList.innerHTML = '<div class="empty-history">No history yet</div>';
+        return;
+    }
+
+    historyList.innerHTML = history.map(item => `
+        <div class="history-item glass-card" onclick="startAnalysisFromHistory('${item.url}')">
+            <img src="${item.thumbnail || 'https://via.placeholder.com/60'}" class="history-thumb">
+            <div class="history-info">
+                <h4>${item.title}</h4>
+                <span class="history-platform">${item.platform}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function toggleHistory() {
+    historySidebar.classList.toggle('active');
+}
+
+function startAnalysisFromHistory(url) {
+    if (!url) return;
+    urlInput.value = url;
+    historySidebar.classList.remove('active');
+    startAnalysis(url);
+}
+
+function toggleFullscreen() {
+    const video = document.getElementById('preview-video');
+    if (!video) return;
+
+    if (!document.fullscreenElement) {
+        video.requestFullscreen().catch(err => {
+            console.warn(`Error attempting to enable fullscreen: ${err.message}`);
+        });
+    } else {
+        document.exitFullscreen();
+    }
+}
+
 
 function openPreview(format_id, isImage = false) {
     if (!currentAnalysisData) return;
@@ -180,7 +256,14 @@ function openPreview(format_id, isImage = false) {
     if (video) video.load();
 }
 
-// toggleFullscreen code...
+
+
+
+function closePreview() {
+    previewModal.classList.add('hidden');
+    playerContainer.innerHTML = ''; // Stop video playback
+}
+
 
 function downloadVideo(formatId) {
     if (!currentAnalysisData) return;
